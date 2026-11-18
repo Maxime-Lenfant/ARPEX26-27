@@ -39,6 +39,9 @@ int pedalePourcentage = 0;
 unsigned long ui_t0 = 0;
 const unsigned long UI_PERIOD_MS = 100;
 
+uint8_t PREV_octetBoutons = 0;
+uint8_t PREV_octetEtat = 0;
+
 /* ================== VARIABLES D'ÉTAT ================== */
 ModeGlobal modeGlobal_prec = (ModeGlobal)-1;
 ModeRace   modeRace_prec   = (ModeRace)-1;
@@ -52,10 +55,10 @@ void drawStringCentered(const String& txt, int y, int font, int x_offset = 0) {
 }
 
 /* ================== COMMUNICATION BINAIRE (ESP32) ================== */
+
 void envoyerTrameBinaire(bool eventChangement = false) {
     uint8_t octetBoutons = 0;
     uint8_t octetEtat = 0;
-
     // --- OCTET 1 : Boutons (Préfixe 01 -> 0x40 en Hexa) ---
     octetBoutons |= (1 << 6); // Force le bit 6 à 1 (donc commence par 01 sur les bits 7 et 6)
     if (digitalRead(PIN_CLIGNO_G) == LOW)       octetBoutons |= (1 << 0);
@@ -80,8 +83,17 @@ void envoyerTrameBinaire(bool eventChangement = false) {
     octetEtat |= ((codeMode & 0x03) << 4);
 
     // Envoi de la trame binaire sur UART1 (Pin GP0 TX vers ESP32 RX)
+    // On verifie que la trame n'est pas redondante ou est nulle
     Serial1.write(octetEtat);
-    Serial1.write(octetBoutons);
+    if (octetBoutons != PREV_octetBoutons){
+      Serial1.write(octetBoutons);
+    }
+    else {
+      Serial1.write(0x40);
+    }
+
+    PREV_octetBoutons = octetBoutons;
+    PREV_octetEtat = octetEtat;
 }
 
 /* ================== SETUP ================== */
@@ -163,13 +175,13 @@ void gerer_rapport() {
             rapport++;
             t_last = now;
             rapport_ui_prec = -1;   
-            envoyerTrameBinaire(true); 
+            //envoyerTrameBinaire(true); 
         }
         if (pg == LOW && pg_prev == HIGH && rapport > 1) {
             rapport--;
             t_last = now;
             rapport_ui_prec = -1;   
-            envoyerTrameBinaire(true);  
+            //envoyerTrameBinaire(true);  
         }
     }
     pg_prev = pg;
@@ -470,7 +482,7 @@ void loop() {
             rapport = 1;
             rapport_ui_prec = rapport_usb_prec = -1;
         }
-        envoyerTrameBinaire(true);
+        //envoyerTrameBinaire(true);
     }
 
     /* ===== Changement de SOUS-MODE RACE ===== */
@@ -482,7 +494,7 @@ void loop() {
         draw_race_static();
         drawModeRace();
         force_redraw_race = true;
-        envoyerTrameBinaire(true);
+        //envoyerTrameBinaire(true);
     }
 
     /* ===== Rafraîchissement périodique UI et Envoi Télémétrie ===== */
