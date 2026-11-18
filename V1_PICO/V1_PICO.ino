@@ -53,21 +53,20 @@ void drawStringCentered(const String& txt, int y, int font, int x_offset = 0) {
 
 /* ================== COMMUNICATION BINAIRE (ESP32) ================== */
 void envoyerTrameBinaire(bool eventChangement = false) {
-    uint8_t trame[2] = {0x00, 0x00};
+    uint8_t octetBoutons = 0;
+    uint8_t octetEtat = 0;
 
-    // --- OCTET 1 : États des boutons (1 = Appuyé / Actif) ---
-    if (digitalRead(PIN_CLIGNO_G) == LOW)       trame[0] |= (1 << 0);
-    if (digitalRead(PIN_CLIGNO_D) == LOW)       trame[0] |= (1 << 1);
-    if (digitalRead(PIN_PHARES) == LOW)         trame[0] |= (1 << 2);
-    if (digitalRead(PIN_APPEL_PHARES) == LOW)   trame[0] |= (1 << 3);
-    if (digitalRead(PIN_RADIO) == LOW)          trame[0] |= (1 << 4);
-    if (digitalRead(PIN_MUTE) == LOW)           trame[0] |= (1 << 5);
-    if (digitalRead(PIN_PALETTE_GAUCHE) == LOW) trame[0] |= (1 << 6);
-    if (digitalRead(PIN_PALETTE_DROITE) == LOW) trame[0] |= (1 << 7);
+    // --- OCTET 1 : Boutons (Préfixe 01 -> 0x40 en Hexa) ---
+    octetBoutons |= (1 << 6); // Force le bit 6 à 1 (donc commence par 01 sur les bits 7 et 6)
+    if (digitalRead(PIN_CLIGNO_G) == LOW)       octetBoutons |= (1 << 0);
+    if (digitalRead(PIN_CLIGNO_D) == LOW)       octetBoutons |= (1 << 1);
+    if (digitalRead(PIN_PHARES) == LOW)         octetBoutons |= (1 << 2);
+    if (digitalRead(PIN_APPEL_PHARES) == LOW)   octetBoutons |= (1 << 3);
+    if (digitalRead(PIN_RADIO) == LOW)          octetBoutons |= (1 << 4);
+    if (digitalRead(PIN_MUTE) == LOW)           octetBoutons |= (1 << 5);
 
-    // --- OCTET 2 : Mode et Rapport ---
-    // Bits 0..3 : Rapport (1 à 6)
-    trame[1] |= (rapport & 0x0F);
+    // --- OCTET 2 : Régime / Mode / Rapport (Préfixe 10 -> 0x80 en Hexa) ---
+    octetEtat |= (2 << 6); // Force les bits 7=1 et 6=0 (donc commence par 10)
 
     // Bits 4..5 : Mode de conduite (0 = INIT, 1 = ELEC, 2 = SIMU)
     uint8_t codeMode = 0;
@@ -78,15 +77,11 @@ void envoyerTrameBinaire(bool eventChangement = false) {
     } else {
         codeMode = 2;
     }
-    trame[1] |= ((codeMode & 0x03) << 4);
-
-    // Bit 7 : Flag d'évènement / changement de rapport
-    if (eventChangement) {
-        trame[1] |= 0x80;
-    }
+    octetEtat |= ((codeMode & 0x03) << 4);
 
     // Envoi de la trame binaire sur UART1 (Pin GP0 TX vers ESP32 RX)
-    Serial1.write(trame, 2);
+    Serial1.write(octetEtat);
+    Serial1.write(octetBoutons);
 }
 
 /* ================== SETUP ================== */
@@ -100,6 +95,7 @@ void setup() {
   Serial1.begin(115200);  // Liaison UART vers l'ESP32-S3 (GP0/GP1)
 
   tft.init();
+  Serial.println("SE");
   tft.setRotation(1);
   tft.setTextFont(2);       
   tft.setTextColor(TFT_BLACK, COULEUR_FOND);

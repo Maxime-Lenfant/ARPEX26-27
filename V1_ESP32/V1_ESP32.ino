@@ -9,16 +9,16 @@
 Adafruit_ADS1115 ads;
 
 // --- Broches I2C ---
-const int PIN_SDA = 21; // D21 dans le PDF
-const int PIN_SCL = 22; // D22 dans le PDF
+const int PIN_SDA = 21; 
+const int PIN_SCL = 22; 
 
 // --- Broches UART (Vers le Pico) ---
-const int PICO_RX = 16; // RX2 (GPIO 16) dans le PDF
-const int PICO_TX = 17; // TX2 (GPIO 17) dans le PDF
+const int PICO_RX = 16; 
+const int PICO_TX = 17; 
 
 // --- Broches CAN (Sélecteur de vitesse) ---
-const gpio_num_t CAN_TX = GPIO_NUM_4; // D4 dans le PDF
-const gpio_num_t CAN_RX = GPIO_NUM_5; // D5 dans le PDF
+const gpio_num_t CAN_TX = GPIO_NUM_4;
+const gpio_num_t CAN_RX = GPIO_NUM_5;
 
 // Variables Globales
 // ==========================================
@@ -28,6 +28,8 @@ const float PEDALE_V_MIN_C2 = 0.8;
 const float PEDALE_V_MAX_C2 = 3.7;
 const float PEDALE_MAX_OUT = 4.5;
 const int RPM_MOTEUR_MAX = 8000;
+
+const int DEBUG_VERBOSE = 1;
 
 enum ModeConduite { MODE_INIT = 0, MODE_AUTO = 1, MODE_SIMU = 2 };
 enum EtatSysteme { ERR_OK = 0, ERR_CAP = 1, ERR_ALL = 2 };
@@ -80,7 +82,7 @@ void init_bus_can() {
 void setup() {
     // Debug Série (TX0/RX0)
     Serial.begin(115200);
-    delay(1000); // Temps de respiration indispensable au boot
+    delay(1000); // boot delay
     Serial.println("\n=== DEMARRAGE ESP32 CONTROLEUR CENTRAL ===");
 
     // UART vers Pico (TX2/RX2)
@@ -95,17 +97,15 @@ void setup() {
     } else {
         Serial.println("ADS1115 trouve.");
     }
-
     // Initialisation du CAN
     init_bus_can();
-    
     Serial.println("Setup OK");
 }
 
 float lire_pedale_brute() {
     float v1 = ads.computeVolts(ads.readADC_SingleEnded(0));
     float v2 = ads.computeVolts(ads.readADC_SingleEnded(1));
-    Serial.println("Tension récup V1 " + String(v1));
+    //if (DEBUG_VERBOSE){Serial.println("Tension récup V1 " + String(v1));}
     if (v1 < (PEDALE_V_MIN_C1 - 0.2) || v2 < (PEDALE_V_MIN_C2 - 0.2)) {
         etat_systeme = ERR_CAP;
         return 0.0;
@@ -150,22 +150,25 @@ void lire_bus_can() {
 }
 
 void gerer_communications_pico() {
-    Serial.println(String(Serial1.available())); //LA
-    while (Serial1.available() >= 2) {
-        uint8_t buffer[2];
-        Serial1.readBytes(buffer, 2);
-        etat_clignotants = buffer[0];
-        etat_radio = buffer[1];
+    int c = 0;
+    while (Serial1.available() > 0) {
+        uint8_t b = Serial1.read();
+        // On stocke seulement les 2 bits de poids fort pour l'identification 
+        uint8_t prefixe = (b & 0xC0); // Masque 11000000 en binaire
+        //Serial.println(b, BIN);
+        if (prefixe == 0x40) { 
+            etat_clignotants = (b & 0x3F); // On récupère les 6 bits de données
+            if (DEBUG_VERBOSE){
+                Serial.println("Mot Boutons :  ");
+                Serial.println(etat_clignotants, BIN);
+            }
+        } 
+        else if (prefixe == 0x80) { 
+            // C'est l'octet de régime/rapport (10XXXXXX)
+            uint8_t valeurRapport = (b & 0x07);
+            // Traite ton rapport/régime ici...
+        }
     }
-    
-    uint16_t rpm_int = (uint16_t)rpm_reel;
-    uint8_t trame_out[4] = {
-        (uint8_t)mode_conduite,
-        rapport_actuel,
-        (uint8_t)((rpm_int >> 8) & 0xFF),
-        (uint8_t)(rpm_int & 0xFF)
-    };
-    Serial1.write(trame_out, 4);
 }
 
 void loop() {
